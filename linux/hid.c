@@ -171,12 +171,18 @@ static void register_global_error_format(const char *format, ...)
  * Use register_device_error(dev, NULL) to indicate "no error". */
 static void register_device_error(hid_device *dev, const char *msg)
 {
+	if (!dev)
+		return;
+
 	register_error_str(&dev->last_error_str, msg);
 }
 
 /* Similar to register_device_error, but you can pass a format string into this function. */
 static void register_device_error_format(hid_device *dev, const char *format, ...)
 {
+	if (!dev)
+		return;
+
 	va_list args;
 	va_start(args, format);
 	register_error_str_vformat(&dev->last_error_str, format, args);
@@ -197,6 +203,9 @@ static wchar_t *copy_udev_string(struct udev_device *dev, const char *udev_name)
  */
 static int get_hid_item_size(const __u8 *report_descriptor, __u32 size, unsigned int pos, int *data_len, int *key_size)
 {
+	if (!report_descriptor || !data_len || !key_size)
+		return 0;
+
 	int key = report_descriptor[pos];
 	int size_code;
 
@@ -253,6 +262,9 @@ static int get_hid_item_size(const __u8 *report_descriptor, __u32 size, unsigned
  */
 static __u32 get_hid_report_bytes(const __u8 *rpt, size_t len, size_t num_bytes, size_t cur)
 {
+	if (!rpt)
+		return 0;
+
 	/* Return if there aren't enough bytes. */
 	if (cur + num_bytes >= len)
 		return 0;
@@ -347,6 +359,9 @@ struct hid_usage_iterator {
  */
 static int get_next_hid_usage(const __u8 *report_descriptor, __u32 size, struct hid_usage_iterator *ctx, unsigned short *usage_page, unsigned short *usage)
 {
+	if (!report_descriptor || !pos || !usage)
+		return 0;
+
 	int data_len, key_size;
 	int initial = ctx->pos == 0; /* Used to handle case where no top-level application collection is defined */
 
@@ -370,11 +385,14 @@ static int get_next_hid_usage(const __u8 *report_descriptor, __u32 size, struct 
 			if (data_len == 4) { /* Usages 5.5 / Usage Page 6.2.2.7 */
 				ctx->usage_page = get_hid_report_bytes(report_descriptor, size, 2, ctx->pos + 2);
 				ctx->usage_page_found = 1;
-				*usage = get_hid_report_bytes(report_descriptor, size, 2, ctx->pos);
+
+				if (usage)
+					*usage = get_hid_report_bytes(report_descriptor, size, 2, ctx->pos);
 				usage_found = 1;
 			}
 			else {
-				*usage = get_hid_report_bytes(report_descriptor, size, data_len, ctx->pos);
+				if (usage)
+					*usage = get_hid_report_bytes(report_descriptor, size, data_len, ctx->pos);
 				usage_found = 1;
 			}
 			break;
@@ -386,7 +404,8 @@ static int get_next_hid_usage(const __u8 *report_descriptor, __u32 size, struct 
 
 			/* A pair is valid - to be reported when Collection is found */
 			if (usage_found && ctx->usage_page_found) {
-				*usage_page = ctx->usage_page;
+				if (usage_page)
+					*usage_page = ctx->usage_page;
 				return 0;
 			}
 
@@ -400,8 +419,9 @@ static int get_next_hid_usage(const __u8 *report_descriptor, __u32 size, struct 
 	/* If no top-level application collection is found and usage page/usage pair is found, pair is valid
 	   https://docs.microsoft.com/en-us/windows-hardware/drivers/hid/top-level-collections */
 	if (initial && usage_found && ctx->usage_page_found) {
+		if (usage_page)
 			*usage_page = ctx->usage_page;
-			return 0; /* success */
+		return 0; /* success */
 	}
 
 	return 1; /* finished processing */
@@ -413,6 +433,9 @@ static int get_next_hid_usage(const __u8 *report_descriptor, __u32 size, struct 
  */
 static int get_hid_report_descriptor(const char *rpt_path, struct hidraw_report_descriptor *rpt_desc)
 {
+	if (!rpt_path || !rpt_desc)
+		return -1;
+
 	int rpt_handle;
 	ssize_t res;
 
@@ -443,6 +466,10 @@ static int get_hid_report_descriptor(const char *rpt_path, struct hidraw_report_
 static int get_hid_report_descriptor_from_sysfs(const char *sysfs_path, struct hidraw_report_descriptor *rpt_desc)
 {
 	int res = -1;
+
+	if (!sysfs_path)
+		return res;
+
 	/* Construct <sysfs_path>/device/report_descriptor */
 	size_t rpt_path_len = strlen(sysfs_path) + 25 + 1;
 	char* rpt_path = (char*) calloc(1, rpt_path_len);
@@ -457,6 +484,9 @@ static int get_hid_report_descriptor_from_sysfs(const char *sysfs_path, struct h
 /* return non-zero if successfully parsed */
 static int parse_hid_vid_pid_from_uevent(const char *uevent, unsigned *bus_type, unsigned short *vendor_id, unsigned short *product_id)
 {
+	if (!uevent)
+		return 0;
+
 	char tmp[1024];
 	size_t uevent_len = strlen(uevent);
 	if (uevent_len > sizeof(tmp) - 1)
@@ -528,6 +558,10 @@ static int parse_hid_vid_pid_from_uevent_path(const char *uevent_path, unsigned 
 static int parse_hid_vid_pid_from_sysfs(const char *sysfs_path, unsigned *bus_type, unsigned short *vendor_id, unsigned short *product_id)
 {
 	int res = 0;
+
+	if (!sysfs_path)
+		return res;
+
 	/* Construct <sysfs_path>/device/uevent */
 	size_t uevent_path_len = strlen(sysfs_path) + 14 + 1;
 	char* uevent_path = (char*) calloc(1, uevent_path_len);
@@ -541,6 +575,9 @@ static int parse_hid_vid_pid_from_sysfs(const char *sysfs_path, unsigned *bus_ty
 
 static int get_hid_report_descriptor_from_hidraw(hid_device *dev, struct hidraw_report_descriptor *rpt_desc)
 {
+	if (!dev)
+		return -1;
+
 	int desc_size = 0;
 
 	/* Get Report Descriptor Size */
@@ -834,6 +871,9 @@ end:
 }
 
 static struct hid_device_info * create_device_info_for_hid_device(hid_device *dev) {
+	if (!dev)
+		return NULL;
+
 	struct udev *udev;
 	struct udev_device *udev_dev;
 	struct stat s;
@@ -1089,6 +1129,9 @@ hid_device * HID_API_EXPORT hid_open_path(const char *path)
 
 int HID_API_EXPORT hid_write(hid_device *dev, const unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	int bytes_written;
 
 	if (!data || (length == 0)) {
@@ -1107,6 +1150,9 @@ int HID_API_EXPORT hid_write(hid_device *dev, const unsigned char *data, size_t 
 
 int HID_API_EXPORT hid_read_timeout(hid_device *dev, unsigned char *data, size_t length, int milliseconds)
 {
+	if (!dev)
+		return -1;
+
 	/* Set device error to none */
 	register_device_error(dev, NULL);
 
@@ -1164,6 +1210,9 @@ int HID_API_EXPORT hid_read(hid_device *dev, unsigned char *data, size_t length)
 
 int HID_API_EXPORT hid_set_nonblocking(hid_device *dev, int nonblock)
 {
+	if (!dev)
+		return -1;
+
 	/* Do all non-blocking in userspace using poll(), since it looks
 	   like there's a bug in the kernel in some versions where
 	   read() will not return -1 on disconnection of the USB device */
@@ -1175,6 +1224,9 @@ int HID_API_EXPORT hid_set_nonblocking(hid_device *dev, int nonblock)
 
 int HID_API_EXPORT hid_send_feature_report(hid_device *dev, const unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	int res;
 
 	register_device_error(dev, NULL);
@@ -1188,6 +1240,9 @@ int HID_API_EXPORT hid_send_feature_report(hid_device *dev, const unsigned char 
 
 int HID_API_EXPORT hid_get_feature_report(hid_device *dev, unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	int res;
 
 	register_device_error(dev, NULL);
@@ -1214,6 +1269,9 @@ int HID_API_EXPORT HID_API_CALL hid_send_output_report(hid_device *dev, const un
 
 int HID_API_EXPORT HID_API_CALL hid_get_input_report(hid_device *dev, unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	int res;
 
 	register_device_error(dev, NULL);
@@ -1315,6 +1373,9 @@ int HID_API_EXPORT_CALL hid_get_serial_number_string(hid_device *dev, wchar_t *s
 
 
 HID_API_EXPORT struct hid_device_info *HID_API_CALL hid_get_device_info(hid_device *dev) {
+	if (!dev)
+		return NULL;
+
 	if (!dev->device_info) {
 		// Lazy initialize device_info
 		dev->device_info = create_device_info_for_hid_device(dev);
@@ -1326,6 +1387,9 @@ HID_API_EXPORT struct hid_device_info *HID_API_CALL hid_get_device_info(hid_devi
 
 int HID_API_EXPORT_CALL hid_get_indexed_string(hid_device *dev, int string_index, wchar_t *string, size_t maxlen)
 {
+	if (!dev)
+		return -1;
+
 	(void)string_index;
 	(void)string;
 	(void)maxlen;

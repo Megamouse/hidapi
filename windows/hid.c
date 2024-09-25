@@ -225,6 +225,9 @@ static hid_device *new_hid_device()
 
 static void free_hid_device(hid_device *dev)
 {
+	if (!dev)
+		return;
+
 	CloseHandle(dev->ol.hEvent);
 	CloseHandle(dev->write_ol.hEvent);
 	CloseHandle(dev->device_handle);
@@ -304,6 +307,9 @@ static void register_winapi_error_to_buffer(wchar_t **error_buffer, const WCHAR 
 
 static void register_string_error_to_buffer(wchar_t **error_buffer, const WCHAR *string_error)
 {
+	if (!error_buffer)
+		return;
+
 	free(*error_buffer);
 	*error_buffer = NULL;
 
@@ -318,11 +324,17 @@ static void register_string_error_to_buffer(wchar_t **error_buffer, const WCHAR 
 
 static void register_winapi_error(hid_device *dev, const WCHAR *op)
 {
+	if (!dev)
+		return;
+
 	register_winapi_error_to_buffer(&dev->last_error_str, op);
 }
 
 static void register_string_error(hid_device *dev, const WCHAR *string_error)
 {
+	if (!dev)
+		return;
+
 	register_string_error_to_buffer(&dev->last_error_str, string_error);
 }
 
@@ -456,6 +468,9 @@ static int hid_internal_extract_int_token_value(wchar_t* string, const wchar_t* 
 
 static void hid_internal_get_usb_info(struct hid_device_info* dev, DEVINST dev_node)
 {
+	if (!dev)
+		return;
+
 	wchar_t *device_id = NULL, *hardware_ids = NULL;
 
 	device_id = hid_internal_get_devnode_property(dev_node, &DEVPKEY_Device_InstanceId, DEVPROP_TYPE_STRING);
@@ -564,6 +579,9 @@ end:
 */
 static void hid_internal_get_ble_info(struct hid_device_info* dev, DEVINST dev_node)
 {
+	if (!dev)
+		return;
+
 	if (wcslen(dev->manufacturer_string) == 0) {
 		/* Manufacturer Name String (UUID: 0x2A29) */
 		wchar_t* manufacturer_string = hid_internal_get_devnode_property(dev_node, (const DEVPROPKEY*)&PKEY_DeviceInterface_Bluetooth_Manufacturer, DEVPROP_TYPE_STRING);
@@ -1043,7 +1061,10 @@ HID_API_EXPORT hid_device * HID_API_CALL hid_open_path(const char *path)
 
 end_of_function:
 	free(interface_path);
-	CloseHandle(device_handle);
+
+	if (device_handle) {
+		CloseHandle(device_handle);
+	}
 
 	if (pp_data) {
 		HidD_FreePreparsedData(pp_data);
@@ -1060,6 +1081,9 @@ int HID_API_EXPORT HID_API_CALL hid_write(hid_device *dev, const unsigned char *
 	BOOL overlapped = FALSE;
 
 	unsigned char *buf;
+
+	if (!dev)
+		return function_result;
 
 	if (!data || !length) {
 		register_string_error(dev, L"Zero buffer/length");
@@ -1078,8 +1102,15 @@ int HID_API_EXPORT HID_API_CALL hid_write(hid_device *dev, const unsigned char *
 		/* The user passed the right number of bytes. Use the buffer as-is. */
 		buf = (unsigned char *) data;
 	} else {
-		if (dev->write_buf == NULL)
+		if (dev->write_buf == NULL) {
 			dev->write_buf = (unsigned char *) malloc(dev->output_report_length);
+
+			if (dev->write_buf == NULL) {
+				register_winapi_error(dev, L"hid_write/malloc");
+				goto end_of_function;
+			}
+		}
+
 		buf = dev->write_buf;
 		memcpy(buf, data, length);
 		memset(buf + length, 0, dev->output_report_length - length);
@@ -1123,9 +1154,11 @@ end_of_function:
 	return function_result;
 }
 
-
 int HID_API_EXPORT HID_API_CALL hid_read_timeout(hid_device *dev, unsigned char *data, size_t length, int milliseconds)
 {
+	if (!dev)
+		return -1;
+
 	DWORD bytes_read = 0;
 	size_t copy_len = 0;
 	BOOL res = FALSE;
@@ -1217,12 +1250,18 @@ int HID_API_EXPORT HID_API_CALL hid_read(hid_device *dev, unsigned char *data, s
 
 int HID_API_EXPORT HID_API_CALL hid_set_nonblocking(hid_device *dev, int nonblock)
 {
+	if (!dev)
+		return -1;
+
 	dev->blocking = !nonblock;
 	return 0; /* Success */
 }
 
 int HID_API_EXPORT HID_API_CALL hid_send_feature_report(hid_device *dev, const unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	BOOL res = FALSE;
 	unsigned char *buf;
 	size_t length_to_send;
@@ -1243,8 +1282,15 @@ int HID_API_EXPORT HID_API_CALL hid_send_feature_report(hid_device *dev, const u
 		buf = (unsigned char *) data;
 		length_to_send = length;
 	} else {
-		if (dev->feature_buf == NULL)
+		if (dev->feature_buf == NULL) {
 			dev->feature_buf = (unsigned char *) malloc(dev->feature_report_length);
+
+			if (dev->feature_buf == NULL) {
+				register_winapi_error(dev, L"hid_send_feature_report/malloc");
+				return -1;
+			}
+		}
+
 		buf = dev->feature_buf;
 		memcpy(buf, data, length);
 		memset(buf + length, 0, dev->feature_report_length - length);
@@ -1263,6 +1309,9 @@ int HID_API_EXPORT HID_API_CALL hid_send_feature_report(hid_device *dev, const u
 
 static int hid_get_report(hid_device *dev, DWORD report_type, unsigned char *data, size_t length)
 {
+	if (!dev)
+		return -1;
+
 	BOOL res;
 	DWORD bytes_returned = 0;
 
@@ -1337,8 +1386,15 @@ int HID_API_EXPORT HID_API_CALL hid_send_output_report(hid_device* dev, const un
 		buf = (unsigned char *) data;
 		length_to_send = length;
 	} else {
-		if (dev->write_buf == NULL)
+		if (dev->write_buf == NULL) {
 			dev->write_buf = (unsigned char *) malloc(dev->output_report_length);
+
+			if (dev->write_buf == NULL) {
+				register_winapi_error(dev, L"hid_send_output_report/malloc");
+				return -1;
+			}
+		}
+
 		buf = dev->write_buf;
 		memcpy(buf, data, length);
 		memset(buf + length, 0, dev->output_report_length - length);
@@ -1371,6 +1427,9 @@ void HID_API_EXPORT HID_API_CALL hid_close(hid_device *dev)
 
 int HID_API_EXPORT_CALL HID_API_CALL hid_get_manufacturer_string(hid_device *dev, wchar_t *string, size_t maxlen)
 {
+	if (!dev)
+		return -1;
+
 	if (!string || !maxlen) {
 		register_string_error(dev, L"Zero buffer/length");
 		return -1;
@@ -1391,6 +1450,9 @@ int HID_API_EXPORT_CALL HID_API_CALL hid_get_manufacturer_string(hid_device *dev
 
 int HID_API_EXPORT_CALL HID_API_CALL hid_get_product_string(hid_device *dev, wchar_t *string, size_t maxlen)
 {
+	if (!dev)
+		return -1;
+
 	if (!string || !maxlen) {
 		register_string_error(dev, L"Zero buffer/length");
 		return -1;
@@ -1411,6 +1473,9 @@ int HID_API_EXPORT_CALL HID_API_CALL hid_get_product_string(hid_device *dev, wch
 
 int HID_API_EXPORT_CALL HID_API_CALL hid_get_serial_number_string(hid_device *dev, wchar_t *string, size_t maxlen)
 {
+	if (!dev)
+		return -1;
+
 	if (!string || !maxlen) {
 		register_string_error(dev, L"Zero buffer/length");
 		return -1;
@@ -1430,6 +1495,9 @@ int HID_API_EXPORT_CALL HID_API_CALL hid_get_serial_number_string(hid_device *de
 }
 
 HID_API_EXPORT struct hid_device_info * HID_API_CALL hid_get_device_info(hid_device *dev) {
+	if (!dev)
+		return NULL;
+
 	if (!dev->device_info)
 	{
 		register_string_error(dev, L"NULL device info");
@@ -1441,6 +1509,9 @@ HID_API_EXPORT struct hid_device_info * HID_API_CALL hid_get_device_info(hid_dev
 
 int HID_API_EXPORT_CALL HID_API_CALL hid_get_indexed_string(hid_device *dev, int string_index, wchar_t *string, size_t maxlen)
 {
+	if (!dev)
+		return -1;
+
 	BOOL res;
 
 	if (dev->device_info && dev->device_info->bus_type == HID_API_BUS_USB && maxlen > MAX_STRING_WCHARS_USB) {
@@ -1461,6 +1532,9 @@ int HID_API_EXPORT_CALL HID_API_CALL hid_get_indexed_string(hid_device *dev, int
 
 int HID_API_EXPORT_CALL hid_winapi_get_container_id(hid_device *dev, GUID *container_id)
 {
+	if (!dev)
+		return -1;
+
 	wchar_t *interface_path = NULL, *device_id = NULL;
 	CONFIGRET cr = CR_FAILURE;
 	DEVINST dev_node;
@@ -1513,6 +1587,9 @@ end:
 
 int HID_API_EXPORT_CALL hid_get_report_descriptor(hid_device *dev, unsigned char *buf, size_t buf_size)
 {
+	if (!dev)
+		return -1;
+
 	PHIDP_PREPARSED_DATA pp_data = NULL;
 
 	if (!HidD_GetPreparsedData(dev->device_handle, &pp_data) || pp_data == NULL) {
